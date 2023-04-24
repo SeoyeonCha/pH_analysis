@@ -1,0 +1,105 @@
+---
+title: 'Arabidopsis COP1 guides stomatal response in guard cells through pH regulation'
+author: "Seooyeon Cha"
+date: "Apr, 2023"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) # global options
+knitr::opts_knit$set(root.dir ="~/pHanal/pH.xlsx")
+```
+
+```{r package, message = FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+```
+
+## Data processing
+
+```{r}
+# Make convert function
+convert_ratio <- function(file){
+  df = read_excel(file) %>% filter(Sample != "", !is.na(Mean)) 
+  data.frame(Sample = df$Sample[c(TRUE,FALSE)],
+             C = (df$Mean[c(TRUE,FALSE)]), M = (df$Mean[c(FALSE, TRUE)]),
+             Trt= (df$Trt[c(TRUE,FALSE)])) %>%
+    filter(C>30)%>%
+    mutate("M/C" = M/C,
+           Sample = as.factor(Sample),
+           Trt = as.factor(Trt)) %>%
+    return()
+}
+```
+
+## Load Data
+```{r}
+# pH Calibration data
+cal <- convert_ratio(file = "~/pHanal/pH.xlsx")
+```
+
+
+## In situ calibration curve (pH 4.3 ~ 7.8)
+
+```{r}
+##### Calibration curve #####
+# x=Ratio, y =pH
+
+cal_res <- cal %>%
+  group_by(Trt, Sample) %>%
+  summarise(mean =mean(`M/C`),
+            sd =sd(`M/C`),.groups = "drop",
+            n=n()) 
+  
+x <- cal_res$mean
+
+y <- as.numeric(levels(cal_res$Trt))[cal_res$Trt]
+plot(x,y)
+x <- log(x)
+fit <- lm(y ~ x + I(x^2)+I(x^3))
+
+newdata <- data.frame(x = log(seq(from =0.8, to =2.2, by  = 0.01)))
+newdata$pred_y <- predict(fit, newdata = newdata, se.fit = TRUE)$fit
+data.frame(seq(from =0.8, to =2.2, by  = 0.01),newdata$pred_y)
+
+
+
+
+cal_curve <- cal_res%>%
+  ggplot(aes(x = mean, y = Trt, group =1)) + 
+  geom_point( size =4)+
+  geom_line(data =newdata, aes(x=exp(x), y = pred_y) ,col = "red", lty =2, size =1.3)+
+  labs(x = "Ratio 488/458 nm", y = "pH")+
+  theme_bw() + 
+  scale_x_continuous(breaks =seq(0.6, 3, by = 0.2) ,limits = c(0.8, 2.22))+
+  scale_y_continuous(breaks = c(4.3, 4.8, 5.3, 5.8, 6.3, 6.8, 7.3, 7.8))+
+  theme(
+    axis.ticks = element_line(size = 0.8, color="black"), 
+    axis.ticks.length = unit(.2, "cm"),
+    axis.title.x = element_text(size = 18, vjust = -0.5),
+    axis.title.y = element_text(size = 18, vjust =+2.5),
+    axis.text.x = element_text(size=18,vjust =0.6 ,color = "black"),
+    axis.text.y = element_text(size=18, color = "black"),
+   axis.line=element_line(size=0.8))+
+  theme(plot.margin = unit(c(0.3,0.2,0.4,0.4), "cm"))
+cal_curve
+
+summary(fit)
+
+```
+
+
+### Apply calibration curve
+```{r}
+data <- data.frame(ratio = seq(from = 0.8,to = 2.2, by = 0.05))
+xvar <- data %>% 
+  mutate(x = log(ratio)) %>%
+  as.data.frame()
+
+data$pH <- predict(fit, newdata = xvar, se.fit = TRUE)$fit
+head(data)
+```
+
+
